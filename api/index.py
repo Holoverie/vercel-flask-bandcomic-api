@@ -409,7 +409,14 @@ def _convert_to_lvgl8(image):
 
     w, h = image.size
 
-    palette = image.getpalette()
+    raw_palette = image.getpalette()
+    palette = []
+    for i in range(256):
+        idx = i * 3
+        if idx + 2 < len(raw_palette):
+            palette.append((raw_palette[idx], raw_palette[idx + 1], raw_palette[idx + 2]))
+        else:
+            palette.append((0, 0, 0))
 
     cf = 10
     always_zero = 0
@@ -420,10 +427,7 @@ def _convert_to_lvgl8(image):
     output = BytesIO()
     output.write(struct.pack('<I', header_word1))
 
-    for i in range(256):
-        r = palette[i * 3]
-        g = palette[i * 3 + 1]
-        b = palette[i * 3 + 2]
+    for r, g, b in palette:
         output.write(bytes([b, g, r, 0xFF]))
 
     output.write(image.tobytes())
