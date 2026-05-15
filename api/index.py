@@ -3,6 +3,7 @@ from flask import Flask, Response, jsonify, request
 from jmcomic import *
 import requests
 import logging
+import struct
 
 import sys
 
@@ -329,6 +330,7 @@ def image_proxy():
         # 设置目标宽度和图片质量，默认值针对IoT设备优化
         target_width = int(request.args.get("width", 600))
         quality = int(request.args.get("quality", 50))
+        iflvgl = request.args.get("ifLVGL", "0")
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
@@ -349,6 +351,17 @@ def image_proxy():
         resized_image = original_image.resize(
             (target_width, target_height), Image.Resampling.LANCZOS
         )
+
+        if iflvgl in ("1", "true", "True"):
+            output_buffer = _convert_to_lvgl8(resized_image)
+            return Response(
+                output_buffer.getvalue(),
+                mimetype="application/octet-stream",
+                headers={
+                    "Cache-Control": "public, max-age=86400",
+                    "Content-Type": "application/octet-stream",
+                },
+            )
 
         # 保存为JPEG格式并调整质量
         output_buffer = BytesIO()
@@ -381,6 +394,48 @@ def image_proxy():
     except Exception as e:
         logging.error(f"图片处理失败: {str(e)}")
         return jsonify({"error": f"图片处理失败: {str(e)}"}), 500
+
+
+def _convert_to_lvgl8(image):
+    """将PIL Image转换为LVGL8 indexed-8 + RGB888 palette二进制格式"""
+    if image.mode == "RGBA":
+        background = Image.new("RGB", image.size, (255, 255, 255))
+        background.paste(image, mask=image.split()[-1])
+        image = background
+    elif image.mode != "RGB":
+        image = image.convert("RGB")
+
+    image = image.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+
+    w, h = image.size
+
+    palette = image.getpalette()
+
+    cf = 10
+    always_zero = 0
+    reserved = 0
+    rotation = 0
+
+    header_word1 = cf | (always_zero << 5) | (reserved << 8) | (w << 10) | (h << 21)
+    header_word2 = rotation
+    stride = w
+    reserved_2 = 0
+
+    output = BytesIO()
+    output.write(struct.pack('<I', header_word1))
+    output.write(struct.pack('<I', header_word2))
+    output.write(struct.pack('<I', stride))
+    output.write(struct.pack('<I', reserved_2))
+
+    for i in range(256):
+        r = palette[i * 3]
+        g = palette[i * 3 + 1]
+        b = palette[i * 3 + 2]
+        output.write(bytes([r, g, b]))
+
+    output.write(image.tobytes())
+
+    return output
 
 @app.get("/photo/<int:item_id>")
 @app.get("/photo/<int:item_id>/")
