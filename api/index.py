@@ -397,7 +397,7 @@ def image_proxy():
 
 
 def _convert_to_lvgl8(image):
-    """将PIL Image转换为LVGL8 indexed-8 + RGB888 palette二进制格式"""
+    """将PIL Image转换为LVGL8 indexed-8二进制格式"""
     if image.mode == "RGBA":
         background = Image.new("RGB", image.size, (255, 255, 255))
         background.paste(image, mask=image.split()[-1])
@@ -414,24 +414,17 @@ def _convert_to_lvgl8(image):
     cf = 10
     always_zero = 0
     reserved = 0
-    rotation = 0
 
     header_word1 = cf | (always_zero << 5) | (reserved << 8) | (w << 10) | (h << 21)
-    header_word2 = rotation
-    stride = w
-    reserved_2 = 0
 
     output = BytesIO()
     output.write(struct.pack('<I', header_word1))
-    output.write(struct.pack('<I', header_word2))
-    output.write(struct.pack('<I', stride))
-    output.write(struct.pack('<I', reserved_2))
 
     for i in range(256):
         r = palette[i * 3]
         g = palette[i * 3 + 1]
         b = palette[i * 3 + 2]
-        output.write(bytes([r, g, b]))
+        output.write(bytes([b, g, r, 0xFF]))
 
     output.write(image.tobytes())
 
